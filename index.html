@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phone Workstation</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📞 Phone Workstation</h1>
+      <p class="subtitle">Parse · Validate · Deduplicate · Export</p>
+    </header>
+
+    <main>
+      <section class="input-section">
+        <label for="phoneInput">Paste phone numbers (one per line or comma-separated)</label>
+        <textarea
+          id="phoneInput"
+          placeholder="e.g.&#10;+1 (555) 123-4567&#10;555.987.6543&#10;+44 20 7946 0958"
+          rows="10"
+        ></textarea>
+
+        <div class="options-row">
+          <label class="option">
+            <input type="checkbox" id="intlFormat" checked />
+            Normalize to E.164
+          </label>
+          <label class="option">
+            <input type="checkbox" id="removeDupes" checked />
+            Remove duplicates
+          </label>
+          <label class="option">
+            <select id="defaultCountry">
+              <option value="US">Default country: US</option>
+              <option value="GB">Default country: GB</option>
+              <option value="AU">Default country: AU</option>
+              <option value="CA">Default country: CA</option>
+              <option value="IN">Default country: IN</option>
+            </select>
+          </label>
+        </div>
+
+        <button id="processBtn" class="btn-primary">Process Numbers</button>
+      </section>
+
+      <section class="results-section" id="resultsSection" hidden>
+        <div class="stats-row" id="statsRow"></div>
+
+        <div class="tabs">
+          <button class="tab active" data-tab="valid">✅ Valid</button>
+          <button class="tab" data-tab="invalid">❌ Invalid</button>
+          <button class="tab" data-tab="dupes">🔁 Duplicates</button>
+        </div>
+
+        <div class="tab-content" id="tabValid">
+          <textarea id="validOutput" readonly></textarea>
+          <div class="export-row">
+            <button class="btn-secondary" onclick="copyOutput('validOutput')">Copy</button>
+            <button class="btn-secondary" onclick="exportCSV('valid')">Export CSV</button>
+            <button class="btn-secondary" onclick="exportTXT('valid')">Export TXT</button>
+          </div>
+        </div>
+
+        <div class="tab-content hidden" id="tabInvalid">
+          <textarea id="invalidOutput" readonly></textarea>
+        </div>
+
+        <div class="tab-content hidden" id="tabDupes">
+          <textarea id="dupesOutput" readonly></textarea>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
