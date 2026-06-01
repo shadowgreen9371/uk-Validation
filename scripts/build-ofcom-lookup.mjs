@@ -6,13 +6,21 @@
      • block-allocation check  (is this number's block allocated → could be live?)
      • allocated-carrier lookup (which CP was the block given to: BT, Sky, …)
 
-   ── VERIFIED Ofcom CSV format (June 2026) ───────────────────────────────
-   Columns:  "Communication Provider" , "Number Type" , "Block / Code"
-   Example rows:
-       BT ,GEOGRAPHIC ,20 7946          -> London block,  prefix 207946
-       EE ,MOBILE     ,7488 0           -> mobile block,  prefix 74880
-   There is NO status column: a block listed in the allocated-numbers files
-   IS allocated. (Feed this script the allocated files, not the "free" list.)
+   ── VERIFIED Ofcom CSV formats (June 2026) ──────────────────────────────
+   The script handles BOTH layouts Ofcom ships:
+
+   A) Geographic / range files (sabcde*.csv, S1.csv, …) — the main data:
+        "NMS Number Block: Number Block","Block Status","CP Name",
+        "Geographic Number Length","Allocation Date","Notes"
+        e.g.  2079 46,Allocated,British Telecommunications PLC,(0)+10,...
+        Only rows with Block Status = "Allocated" are kept
+        (Protected / Free / Quarantined are NOT live).
+
+   B) "Companies no longer trading" file:
+        "Communication Provider","Number Type","Block / Code"  (no status)
+
+   Block code digits are concatenated to the national prefix:
+        "2079 46" -> 207946   (matches a +44 20 7946 xxxx number)
 
    ── HOW TO USE ──────────────────────────────────────────────────────────
    1. Download Ofcom numbering data (free, no login):
@@ -84,15 +92,22 @@ for (const file of csvs) {
   files++;
 
   const headers = parsed[0];
-  const cpIdx    = findCol(headers, ['communication provider', 'communications provider', 'provider', 'allocatee']);
+  const cpIdx    = findCol(headers, ['cp name', 'communication provider', 'communications provider', 'provider', 'allocatee']);
   const typeIdx  = findCol(headers, ['number type', 'type']);
-  const blockIdx = findCol(headers, ['block / code', 'block/code', 'block', 'code', 'sabc']);
+  const statIdx  = findCol(headers, ['block status', 'status', 'availability']);
+  const blockIdx = findCol(headers, ['number block', 'block / code', 'block/code', 'block', 'code', 'sabc']);
   if (blockIdx === -1) { console.warn(`  ! ${file}: no Block/Code column, skipped`); continue; }
 
   for (let r = 1; r < parsed.length; r++) {
     const cells = parsed[r];
     if (!cells || !cells.length) continue;
     rows++;
+
+    // If a status column exists, keep ONLY allocated blocks.
+    if (statIdx !== -1) {
+      const st = norm(cells[statIdx]);
+      if (st && !st.includes('allocated')) continue;   // skip protected/free/quarantined
+    }
 
     if (typeFilter.length && typeIdx !== -1) {
       const t = String(cells[typeIdx] || '').trim().toUpperCase();
