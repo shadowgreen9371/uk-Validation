@@ -15,8 +15,25 @@ Everything runs client-side — no server, no data leaves the browser.
 - **Duplicate removal** — by canonical E.164
 - **Ofcom block allocation check** (free, unlimited) — flags numbers whose block isn't
   allocated by Ofcom; those *cannot* be live and are dropped as invalid
+- **TPS / CTPS suppression** — load a licensed TPS file; opted-out numbers are flagged
+  and excluded from the TPS-safe export (UK compliance)
 - **Optional live carrier check** — paste a free Veriphone API key (1,000/month)
-- **Export** landlines or the full processed set to CSV
+- **Export** TPS-safe callable list, landlines, or the full processed set to CSV
+
+## TPS / CTPS Suppression (compliance)
+
+Calling a UK consumer who's registered with the **Telephone Preference Service** without
+their consent breaches **PECR** and can draw ICO fines. This tool suppresses them:
+
+1. Obtain a TPS/CTPS file you are **licensed** to use (the register is paid; this app does
+   not and cannot provide it). Any CSV/TXT containing the numbers works.
+2. Click **Load TPS file** in the sidebar. Numbers are normalised to E.164 in-browser.
+3. Matches get a 🚫 **Registered** badge, show in the **TPS-registered** tab, and the
+   **🚫 TPS** stat counts them.
+4. Click **Export TPS-safe** — valid landlines + mobiles **minus** TPS-registered numbers.
+   (Toggle “Auto-suppress matches” off to export everything with a `tps_registered` column instead.)
+
+> The TPS list never leaves your browser. Export adds a `tps_registered` (yes/no) column.
 
 ## Ofcom Block + Carrier Check (free)
 

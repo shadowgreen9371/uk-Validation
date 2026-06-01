@@ -161,6 +161,35 @@ function ofcomLookup(parsed){
   return { alloc:'unallocated', carrier:'' };
 }
 
+// ── TPS / CTPS suppression list (user-supplied, licensed) ─────────────────
+let tps = null;   // Set of E.164 numbers registered on TPS
+$('tpsInput').addEventListener('change', async e => {
+  const f = e.target.files[0]; if(!f) return;
+  $('tpsStatus').textContent = 'Reading TPS list…';
+  try{
+    const text = await f.text();
+    const set = new Set();
+    // Accept CSV/TXT: pull every token that looks like a phone number.
+    for(const tok of text.split(/[\s,;"']+/)){
+      const t = tok.trim(); if(t.length < 7) continue;
+      if(!/\d/.test(t)) continue;
+      let p=null; try{ p=libphonenumber.parsePhoneNumber(t,'GB'); }catch(_){}
+      if(p && p.isValid()) set.add(p.format('E.164'));
+      else { const d=t.replace(/\D/g,''); if(d.length>=7) set.add('+44'+d.replace(/^0/,'')); }
+    }
+    tps = set;
+    $('tpsStatus').textContent = `TPS list loaded · ${set.size.toLocaleString()} numbers`;
+    if(state.records.length){ applyTps(); updateStats(); renderTable(); }
+  }catch(err){ $('tpsStatus').textContent = 'Could not read TPS file'; console.warn(err); }
+});
+
+// Flag every record that matches the TPS list.
+function applyTps(){
+  state.records.forEach(r=>{
+    r._tps = !!(tps && r._e164 && tps.has(r._e164));
+  });
+}
+
 // ── File ingestion ──────────────────────────────────────────────────────
 $('folderInput').addEventListener('change', e => addFiles(e.target.files));
 $('fileInput').addEventListener('change',   e => addFiles(e.target.files));
@@ -251,12 +280,15 @@ async function processAll(){
   showProgress(88,'Removing duplicates…'); await tick();
   if($('dedup').checked) dedup(state.records);
 
+  showProgress(94,'Checking TPS suppression…'); await tick();
+  applyTps();
+
   showProgress(100,'Done'); await tick();
 
   updateStats();
   $('tabBar').style.display=''; $('tableToolbar').style.display='';
   $('progressWrap').style.display='none';
-  $('btnExportLandline').disabled=false; $('btnExportAll').disabled=false;
+  $('btnExportSafe').disabled=false; $('btnExportLandline').disabled=false; $('btnExportAll').disabled=false;
   $('btnLiveCheck').disabled = false;
   state.tab='landline'; setActiveTab('landline');
   renderTable();
@@ -371,12 +403,14 @@ function updateStats(){
   $('sOther').textContent = c('other').toLocaleString();
   $('sBad').textContent   = c('invalid').toLocaleString();
   $('sDup').textContent   = c('duplicate').toLocaleString();
+  $('sTps').textContent   = state.records.filter(r=>r._tps).length.toLocaleString();
 }
 
 // ── Filter + render ──────────────────────────────────────────────────────
 function filtered(){
   let rows = state.records;
-  if(state.tab!=='all') rows = rows.filter(r=>r._status===state.tab);
+  if(state.tab==='tps') rows = rows.filter(r=>r._tps);
+  else if(state.tab!=='all') rows = rows.filter(r=>r._status===state.tab);
   if(state.query){
     const q=state.query.toLowerCase();
     rows = rows.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().includes(q)));
@@ -402,10 +436,11 @@ function renderTable(){
   const dataKeys = state.records.length ? Object.keys(state.records[0]).filter(k=>!k.startsWith('_')) : [];
   const cols = [...dataKeys, '_line', '_area', '_e164'];
   if(ofcom){ cols.push('_alloc', '_carrier'); }
+  if(tps) cols.push('_tps');
   cols.push('_live', '_status');
 
   $('tableHead').innerHTML = `<tr>${cols.map(c=>{
-    const label = c.startsWith('_') ? ({_line:'Line Type',_area:'Area',_e164:'E.164',_alloc:'Ofcom Block',_carrier:'Carrier',_live:'Live Check',_status:'Status'}[c]||c.slice(1)) : c;
+    const label = c.startsWith('_') ? ({_line:'Line Type',_area:'Area',_e164:'E.164',_alloc:'Ofcom Block',_carrier:'Carrier',_tps:'TPS',_live:'Live Check',_status:'Status'}[c]||c.slice(1)) : c;
     return `<th data-col="${c}">${label}</th>`;
   }).join('')}</tr>`;
 
@@ -414,6 +449,9 @@ function renderTable(){
       const raw=m[r._status]||'b-other '+r._status;const cls=raw.split(' ')[0];const lbl=raw.split(' ').slice(1).join(' ');
       return `<td><span class="badge-status ${cls}">${lbl}</span></td>`;}
     if(c==='_e164') return `<td><code>${r._e164||''}</code></td>`;
+    if(c==='_tps') return r._tps
+      ? `<td><span class="badge-status b-tps">🚫 Registered</span></td>`
+      : `<td><span class="badge-status b-live-active">✅ Clear</span></td>`;
     if(c==='_live'){
       if(!r._live) return `<td><span class="badge-status b-live-unknown">—</span></td>`;
       const lc = r._live==='active'?'b-live-active ✅ Active':r._live==='dead'?'b-live-dead ❌ Dead':'b-live-unknown '+r._live;
@@ -490,6 +528,11 @@ async function liveCheck(){
 }
 
 // ── Export ───────────────────────────────────────────────────────────────
+// TPS-safe: valid landlines + mobiles, excluding TPS-registered numbers
+$('btnExportSafe').addEventListener('click',()=>{
+  const auto = $('tpsAuto').checked;
+  exportRows(r=>(r._status==='landline'||r._status==='mobile') && !(auto && r._tps),'uk_tps_safe.csv');
+});
 $('btnExportLandline').addEventListener('click',()=>exportRows(r=>r._status==='landline','uk_landlines.csv'));
 $('btnExportAll').addEventListener('click',()=>exportRows(()=>true,'all_processed.csv'));
 
@@ -500,7 +543,8 @@ function exportRows(pred, filename){
   const out=rows.map(r=>{
     const o={}; dataKeys.forEach(k=>o[k]=r[k]??'');
     o.e164=r._e164; o.line_type=r._line; o.area=r._area||''; o.status=r._status;
-    o.ofcom_block=r._alloc||''; o.live_check=r._live||''; o.carrier=r._carrier||'';
+    o.ofcom_block=r._alloc||''; o.carrier=r._carrier||'';
+    o.tps_registered=r._tps?'yes':'no'; o.live_check=r._live||'';
     return o;
   });
   const csv=Papa.unparse(out);
@@ -515,6 +559,6 @@ $('btnReset').addEventListener('click',()=>{
   $('folderInput').value=''; $('fileInput').value=''; $('fileList').innerHTML='';
   ['fileListPanel','statsBar','tabBar','tableToolbar','pagination','progressWrap'].forEach(id=>$(id).style.display='none');
   $('dataTable').style.display='none'; $('emptyState').style.display='';
-  $('btnProcess').disabled=true; $('btnExportLandline').disabled=true; $('btnExportAll').disabled=true; $('btnLiveCheck').disabled=true;
+  $('btnProcess').disabled=true; $('btnExportSafe').disabled=true; $('btnExportLandline').disabled=true; $('btnExportAll').disabled=true; $('btnLiveCheck').disabled=true;
   $('searchInput').value=''; $('liveProgress').textContent='';
 });
