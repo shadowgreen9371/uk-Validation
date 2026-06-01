@@ -43,11 +43,13 @@ html,body{height:100%;font-family:'Segoe UI',system-ui,sans-serif;background:var
 .fi-status.done{background:var(--green)}.fi-status.error{background:var(--red)}
 
 .content{display:flex;flex-direction:column;overflow:hidden;padding:16px;gap:12px}
-.stats-bar{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+.stats-bar{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
 .stat-card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:14px 10px;text-align:center}
 .stat-total{border-top:3px solid var(--accent)}.stat-land{border-top:3px solid var(--green)}
 .stat-mob{border-top:3px solid var(--blue)}.stat-other{border-top:3px solid #8b5cf6}
 .stat-bad{border-top:3px solid var(--red)}.stat-dup{border-top:3px solid var(--yellow)}
+.stat-tps{border-top:3px solid #f43f5e}
+.b-tps{background:rgba(244,63,94,.18);color:#fb7185}
 .stat-val{font-size:24px;font-weight:700}.stat-lbl{font-size:11px;color:var(--muted);margin-top:2px}
 
 .progress-wrap{display:flex;align-items:center;gap:12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px}

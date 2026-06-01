@@ -17,7 +17,8 @@
     <span>UK <strong>Validation</strong> Workstation</span>
   </div>
   <div class="topbar-actions">
-    <button id="btnExportLandline" class="btn btn-primary" disabled>⬇ Export Landlines</button>
+    <button id="btnExportSafe"     class="btn btn-primary" disabled>⬇ Export TPS-safe</button>
+    <button id="btnExportLandline" class="btn btn-ghost"   disabled>⬇ Export Landlines</button>
     <button id="btnExportAll"      class="btn btn-ghost"   disabled>⬇ Export All</button>
     <button id="btnReset"          class="btn btn-ghost">✕ Reset</button>
   </div>
@@ -76,6 +77,22 @@
     </div>
 
     <div class="panel">
+      <h3 class="panel-title">TPS Suppression (compliance)</h3>
+      <p class="panel-hint">Upload a <strong>TPS / CTPS</strong> file you've licensed
+        (CSV or TXT of numbers). Any match is flagged as opted-out and excluded from
+        the TPS-safe export — so you don't call them. Runs in-browser.</p>
+      <label class="btn btn-ghost full-width">
+        📋 Load TPS file
+        <input type="file" id="tpsInput" accept=".csv,.txt" hidden />
+      </label>
+      <label class="opt-row checkbox-row mt-4">
+        <input type="checkbox" id="tpsAuto" checked />
+        <span>Auto-suppress matches</span>
+      </label>
+      <div id="tpsStatus" class="live-progress">No TPS list loaded</div>
+    </div>
+
+    <div class="panel">
       <h3 class="panel-title">Live Check (optional)</h3>
       <p class="panel-hint">Validation is free &amp; unlimited. For a real carrier
         line-check, paste a free <a href="https://veriphone.io" target="_blank" rel="noopener">Veriphone</a> API key
@@ -110,6 +127,7 @@
       <div class="stat-card stat-other"><div class="stat-val" id="sOther">0</div><div class="stat-lbl">🔵 VoIP/Other</div></div>
       <div class="stat-card stat-bad"><div class="stat-val" id="sBad">0</div><div class="stat-lbl">❌ Invalid</div></div>
       <div class="stat-card stat-dup"><div class="stat-val" id="sDup">0</div><div class="stat-lbl">🔁 Dupes</div></div>
+      <div class="stat-card stat-tps"><div class="stat-val" id="sTps">0</div><div class="stat-lbl">🚫 TPS</div></div>
     </div>
 
     <div id="progressWrap" style="display:none" class="progress-wrap">
@@ -123,6 +141,7 @@
       <button class="tab" data-tab="other">🔵 VoIP/Other</button>
       <button class="tab" data-tab="invalid">❌ Invalid</button>
       <button class="tab" data-tab="duplicate">🔁 Duplicates</button>
+      <button class="tab" data-tab="tps">🚫 TPS-registered</button>
       <button class="tab" data-tab="all">📋 All</button>
     </div>
 
