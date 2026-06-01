@@ -134,7 +134,7 @@ function ukArea(parsed){
 let ofcom = null;
 (async function loadOfcom(){
   try{
-    const res = await fetch('ofcom-blocks.json', { cache: 'force-cache' });
+    const res = await fetch('ofcom-blocks.json');   // normal HTTP caching (ETag/304)
     if(!res.ok) return;
     const raw = await res.json();
     if(!raw.map || !raw.lengths) return;
