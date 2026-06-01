@@ -14,6 +14,33 @@ const PHONE_VARIANTS = ['phone','mobile','cell','telephone','tel','number','phon
 
 const $ = id => document.getElementById(id);
 
+// ── Ofcom allocation data (optional, loaded if ofcom-blocks.json present) ─
+let ofcom = null;            // { lengths:[...], sets:{len:Set} }
+(async function loadOfcom(){
+  try{
+    const res = await fetch('ofcom-blocks.json', { cache: 'force-cache' });
+    if(!res.ok) return;
+    const raw = await res.json();
+    const sets = {};
+    (raw.lengths||[]).forEach(L => sets[L] = new Set(raw.prefixes[L]||[]));
+    ofcom = { lengths: (raw.lengths||[]).slice().sort((a,b)=>b-a), sets };
+    const el = $('ofcomStatus');
+    if(el) el.textContent = `Ofcom data loaded (${(raw.lengths||[]).reduce((n,L)=>n+(raw.prefixes[L]||[]).length,0).toLocaleString()} blocks, ${(raw.generated||'').slice(0,10)})`;
+  }catch(_){ /* no data file — allocation stays "unknown" */ }
+})();
+
+// Returns 'allocated' | 'unallocated' | 'unknown'
+function checkAllocation(parsed){
+  if(!ofcom || !parsed) return 'unknown';
+  // national significant number, digits only, no leading 0
+  const nsn = parsed.nationalNumber || String(parsed.number||'').replace(/\D/g,'').replace(/^44/,'');
+  if(!nsn) return 'unknown';
+  for(const L of ofcom.lengths){
+    if(nsn.length >= L && ofcom.sets[L].has(nsn.slice(0, L))) return 'allocated';
+  }
+  return 'unallocated';
+}
+
 // ── File ingestion ──────────────────────────────────────────────────────
 $('folderInput').addEventListener('change', e => addFiles(e.target.files));
 $('fileInput').addEventListener('change',   e => addFiles(e.target.files));
@@ -192,6 +219,12 @@ function classify(records, phoneCol, defCountry){
     else { r._status='other'; r._line=type||'Other'; }
 
     r._reason=''; r._live='';   // live status filled by API later
+
+    // Ofcom block-allocation check (free) for UK geographic numbers
+    r._alloc = (r._country === 'GB' && (r._status === 'landline' || r._line === 'Fixed/Mobile'))
+      ? checkAllocation(p) : 'unknown';
+    // An unallocated block cannot be a live number — downgrade to invalid.
+    if(r._alloc === 'unallocated'){ r._status='invalid'; r._line='Unallocated'; r._reason='Block not allocated by Ofcom'; }
   });
 }
 
@@ -243,10 +276,12 @@ function renderTable(){
   $('emptyState').style.display='none'; $('dataTable').style.display='';
 
   const dataKeys = state.records.length ? Object.keys(state.records[0]).filter(k=>!k.startsWith('_')) : [];
-  const cols = [...dataKeys, '_line', '_e164', '_live', '_status'];
+  const cols = [...dataKeys, '_line', '_e164'];
+  if(ofcom) cols.push('_alloc');
+  cols.push('_live', '_status');
 
   $('tableHead').innerHTML = `<tr>${cols.map(c=>{
-    const label = c.startsWith('_') ? ({_line:'Line Type',_e164:'E.164',_live:'Live Check',_status:'Status'}[c]||c.slice(1)) : c;
+    const label = c.startsWith('_') ? ({_line:'Line Type',_e164:'E.164',_alloc:'Ofcom Block',_live:'Live Check',_status:'Status'}[c]||c.slice(1)) : c;
     return `<th data-col="${c}">${label}</th>`;
   }).join('')}</tr>`;
 
@@ -260,6 +295,12 @@ function renderTable(){
       const lc = r._live==='active'?'b-live-active ✅ Active':r._live==='dead'?'b-live-dead ❌ Dead':'b-live-unknown '+r._live;
       const cls=lc.split(' ')[0];const lbl=lc.split(' ').slice(1).join(' ');
       return `<td><span class="badge-status ${cls}">${lbl}</span></td>`;
+    }
+    if(c==='_alloc'){
+      const a=r._alloc;
+      if(a==='allocated') return `<td><span class="badge-status b-live-active">✅ Allocated</span></td>`;
+      if(a==='unallocated') return `<td><span class="badge-status b-live-dead">❌ Unallocated</span></td>`;
+      return `<td><span class="badge-status b-live-unknown">—</span></td>`;
     }
     if(c==='_line') return `<td>${r._line||''}</td>`;
     const v=r[c]??''; return `<td title="${String(v).replace(/"/g,'&quot;')}">${String(v)}</td>`;
@@ -333,7 +374,7 @@ function exportRows(pred, filename){
   const out=rows.map(r=>{
     const o={}; dataKeys.forEach(k=>o[k]=r[k]??'');
     o.e164=r._e164; o.line_type=r._line; o.status=r._status;
-    o.live_check=r._live||''; o.carrier=r._carrier||'';
+    o.ofcom_block=r._alloc||''; o.live_check=r._live||''; o.carrier=r._carrier||'';
     return o;
   });
   const csv=Papa.unparse(out);
