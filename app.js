@@ -128,31 +128,37 @@ function ukArea(parsed){
   return '';
 }
 
-// ── Ofcom allocation data (optional, loaded if ofcom-blocks.json present) ─
-let ofcom = null;            // { lengths:[...], sets:{len:Set} }
+// ── Ofcom data (optional, loaded if ofcom-blocks.json present) ────────────
+// Unified file powers BOTH allocation check and allocated-carrier lookup.
+//   { lengths:[desc], carriers:[names], map:{ "<prefix>": carrierIndex } }
+let ofcom = null;
 (async function loadOfcom(){
   try{
     const res = await fetch('ofcom-blocks.json', { cache: 'force-cache' });
     if(!res.ok) return;
     const raw = await res.json();
-    const sets = {};
-    (raw.lengths||[]).forEach(L => sets[L] = new Set(raw.prefixes[L]||[]));
-    ofcom = { lengths: (raw.lengths||[]).slice().sort((a,b)=>b-a), sets };
+    if(!raw.map || !raw.lengths) return;
+    ofcom = {
+      lengths: raw.lengths.slice().sort((a,b)=>b-a),
+      carriers: raw.carriers || [],
+      map: raw.map,
+    };
     const el = $('ofcomStatus');
-    if(el) el.textContent = `Ofcom data loaded (${(raw.lengths||[]).reduce((n,L)=>n+(raw.prefixes[L]||[]).length,0).toLocaleString()} blocks, ${(raw.generated||'').slice(0,10)})`;
-  }catch(_){ /* no data file — allocation stays "unknown" */ }
+    if(el) el.textContent = `Ofcom data loaded · ${Object.keys(raw.map).length.toLocaleString()} blocks · ${(raw.carriers||[]).length.toLocaleString()} carriers · ${(raw.generated||'').slice(0,10)}`;
+  }catch(_){ /* no data file — allocation/carrier stay "unknown" */ }
 })();
 
-// Returns 'allocated' | 'unallocated' | 'unknown'
-function checkAllocation(parsed){
-  if(!ofcom || !parsed) return 'unknown';
-  // national significant number, digits only, no leading 0
+// Returns { alloc:'allocated'|'unallocated'|'unknown', carrier:'' }
+function ofcomLookup(parsed){
+  if(!ofcom || !parsed) return { alloc:'unknown', carrier:'' };
   const nsn = parsed.nationalNumber || String(parsed.number||'').replace(/\D/g,'').replace(/^44/,'');
-  if(!nsn) return 'unknown';
+  if(!nsn) return { alloc:'unknown', carrier:'' };
   for(const L of ofcom.lengths){
-    if(nsn.length >= L && ofcom.sets[L].has(nsn.slice(0, L))) return 'allocated';
+    if(nsn.length < L) continue;
+    const idx = ofcom.map[nsn.slice(0, L)];
+    if(idx !== undefined) return { alloc:'allocated', carrier: ofcom.carriers[idx] || '' };
   }
-  return 'unallocated';
+  return { alloc:'unallocated', carrier:'' };
 }
 
 // ── File ingestion ──────────────────────────────────────────────────────
@@ -335,11 +341,14 @@ function classify(records, phoneCol, defCountry){
     r._reason=''; r._live='';   // live status filled by API later
     r._area = ukArea(p);        // UK town/region (free, built-in)
 
-    // Ofcom block-allocation check (free) for UK geographic numbers
-    r._alloc = (r._country === 'GB' && (r._status === 'landline' || r._line === 'Fixed/Mobile'))
-      ? checkAllocation(p) : 'unknown';
-    // An unallocated block cannot be a live number — downgrade to invalid.
-    if(r._alloc === 'unallocated'){ r._status='invalid'; r._line='Unallocated'; r._reason='Block not allocated by Ofcom'; }
+    // Ofcom block-allocation + allocated-carrier lookup (free) for UK numbers
+    if(r._country === 'GB'){
+      const look = ofcomLookup(p);
+      r._carrier = look.carrier || '';
+      // Only treat landlines' unallocated blocks as dead (mobile data may be absent)
+      r._alloc = (r._status === 'landline' || r._line === 'Fixed/Mobile') ? look.alloc : 'unknown';
+      if(r._alloc === 'unallocated'){ r._status='invalid'; r._line='Unallocated'; r._reason='Block not allocated by Ofcom'; }
+    } else { r._alloc='unknown'; r._carrier=''; }
   });
 }
 
@@ -392,11 +401,11 @@ function renderTable(){
 
   const dataKeys = state.records.length ? Object.keys(state.records[0]).filter(k=>!k.startsWith('_')) : [];
   const cols = [...dataKeys, '_line', '_area', '_e164'];
-  if(ofcom) cols.push('_alloc');
+  if(ofcom){ cols.push('_alloc', '_carrier'); }
   cols.push('_live', '_status');
 
   $('tableHead').innerHTML = `<tr>${cols.map(c=>{
-    const label = c.startsWith('_') ? ({_line:'Line Type',_area:'Area',_e164:'E.164',_alloc:'Ofcom Block',_live:'Live Check',_status:'Status'}[c]||c.slice(1)) : c;
+    const label = c.startsWith('_') ? ({_line:'Line Type',_area:'Area',_e164:'E.164',_alloc:'Ofcom Block',_carrier:'Carrier',_live:'Live Check',_status:'Status'}[c]||c.slice(1)) : c;
     return `<th data-col="${c}">${label}</th>`;
   }).join('')}</tr>`;
 
@@ -419,6 +428,7 @@ function renderTable(){
     }
     if(c==='_line') return `<td>${r._line||''}</td>`;
     if(c==='_area') return `<td>${r._area||''}</td>`;
+    if(c==='_carrier') return `<td title="${(r._carrier||'').replace(/"/g,'&quot;')}">${r._carrier||''}</td>`;
     const v=r[c]??''; return `<td title="${String(v).replace(/"/g,'&quot;')}">${String(v)}</td>`;
   }).join('')}</tr>`).join('');
 
