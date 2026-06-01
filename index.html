@@ -3,77 +3,145 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Phone Workstation</title>
+  <title>UK Phone Validation Workstation</title>
   <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/libphonenumber-js@1.11.4/bundle/libphonenumber-max.js"></script>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>📞 Phone Workstation</h1>
-      <p class="subtitle">Parse · Validate · Deduplicate · Export</p>
-    </header>
 
-    <main>
-      <section class="input-section">
-        <label for="phoneInput">Paste phone numbers (one per line or comma-separated)</label>
-        <textarea
-          id="phoneInput"
-          placeholder="e.g.&#10;+1 (555) 123-4567&#10;555.987.6543&#10;+44 20 7946 0958"
-          rows="10"
-        ></textarea>
-
-        <div class="options-row">
-          <label class="option">
-            <input type="checkbox" id="intlFormat" checked />
-            Normalize to E.164
-          </label>
-          <label class="option">
-            <input type="checkbox" id="removeDupes" checked />
-            Remove duplicates
-          </label>
-          <label class="option">
-            <select id="defaultCountry">
-              <option value="US">Default country: US</option>
-              <option value="GB">Default country: GB</option>
-              <option value="AU">Default country: AU</option>
-              <option value="CA">Default country: CA</option>
-              <option value="IN">Default country: IN</option>
-            </select>
-          </label>
-        </div>
-
-        <button id="processBtn" class="btn-primary">Process Numbers</button>
-      </section>
-
-      <section class="results-section" id="resultsSection" hidden>
-        <div class="stats-row" id="statsRow"></div>
-
-        <div class="tabs">
-          <button class="tab active" data-tab="valid">✅ Valid</button>
-          <button class="tab" data-tab="invalid">❌ Invalid</button>
-          <button class="tab" data-tab="dupes">🔁 Duplicates</button>
-        </div>
-
-        <div class="tab-content" id="tabValid">
-          <textarea id="validOutput" readonly></textarea>
-          <div class="export-row">
-            <button class="btn-secondary" onclick="copyOutput('validOutput')">Copy</button>
-            <button class="btn-secondary" onclick="exportCSV('valid')">Export CSV</button>
-            <button class="btn-secondary" onclick="exportTXT('valid')">Export TXT</button>
-          </div>
-        </div>
-
-        <div class="tab-content hidden" id="tabInvalid">
-          <textarea id="invalidOutput" readonly></textarea>
-        </div>
-
-        <div class="tab-content hidden" id="tabDupes">
-          <textarea id="dupesOutput" readonly></textarea>
-        </div>
-      </section>
-    </main>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">📞</span>
+    <span>UK <strong>Validation</strong> Workstation</span>
   </div>
+  <div class="topbar-actions">
+    <button id="btnExportLandline" class="btn btn-primary" disabled>⬇ Export Landlines</button>
+    <button id="btnExportAll"      class="btn btn-ghost"   disabled>⬇ Export All</button>
+    <button id="btnReset"          class="btn btn-ghost">✕ Reset</button>
+  </div>
+</header>
 
-  <script src="app.js"></script>
+<main class="layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+
+    <div id="dropZone" class="dropzone">
+      <div class="dropzone-icon">📂</div>
+      <p class="dropzone-title">Drop your folder of packets here</p>
+      <p class="dropzone-sub">Reads inside every Excel / CSV / TXT</p>
+      <label class="btn btn-primary mt-8">
+        📁 Select Folder
+        <input type="file" id="folderInput" webkitdirectory directory multiple hidden />
+      </label>
+      <label class="btn btn-ghost mt-4">
+        📄 Select Files
+        <input type="file" id="fileInput" multiple accept=".csv,.xls,.xlsx,.txt" hidden />
+      </label>
+    </div>
+
+    <div class="panel">
+      <h3 class="panel-title">Options</h3>
+      <label class="opt-row">
+        <span>Default Country</span>
+        <select id="defaultCountry">
+          <option value="GB" selected>🇬🇧 UK (+44)</option>
+          <option value="US">🇺🇸 USA (+1)</option>
+          <option value="IE">🇮🇪 Ireland (+353)</option>
+          <option value="AU">🇦🇺 Australia (+61)</option>
+        </select>
+      </label>
+      <label class="opt-row">
+        <span>Phone column</span>
+        <input id="phoneCol" type="text" placeholder="auto-detect" />
+      </label>
+      <label class="opt-row checkbox-row">
+        <input type="checkbox" id="ukOnly" />
+        <span>UK numbers only</span>
+      </label>
+      <label class="opt-row checkbox-row">
+        <input type="checkbox" id="dedup" checked />
+        <span>Remove duplicates</span>
+      </label>
+    </div>
+
+    <div class="panel">
+      <h3 class="panel-title">Live Check (optional)</h3>
+      <p class="panel-hint">Validation is free &amp; unlimited. For a real carrier
+        line-check, paste a free <a href="https://veriphone.io" target="_blank" rel="noopener">Veriphone</a> API key
+        (1,000 free/month).</p>
+      <label class="opt-row">
+        <span>API key</span>
+        <input id="apiKey" type="password" placeholder="optional" />
+      </label>
+      <button id="btnLiveCheck" class="btn btn-ghost full-width mt-4" disabled>
+        📶 Live-check landlines
+      </button>
+      <div id="liveProgress" class="live-progress"></div>
+    </div>
+
+    <button id="btnProcess" class="btn btn-primary full-width mt-8" disabled>
+      ▶ Process All Files
+    </button>
+
+    <div class="panel" id="fileListPanel" style="display:none">
+      <h3 class="panel-title">Files <span id="fileCount" class="badge">0</span></h3>
+      <ul id="fileList" class="file-list"></ul>
+    </div>
+  </aside>
+
+  <!-- CONTENT -->
+  <section class="content">
+
+    <div class="stats-bar" id="statsBar" style="display:none">
+      <div class="stat-card stat-total"><div class="stat-val" id="sTotal">0</div><div class="stat-lbl">Total</div></div>
+      <div class="stat-card stat-land"><div class="stat-val" id="sLand">0</div><div class="stat-lbl">☎️ Landline</div></div>
+      <div class="stat-card stat-mob"><div class="stat-val" id="sMob">0</div><div class="stat-lbl">📱 Mobile</div></div>
+      <div class="stat-card stat-other"><div class="stat-val" id="sOther">0</div><div class="stat-lbl">🔵 VoIP/Other</div></div>
+      <div class="stat-card stat-bad"><div class="stat-val" id="sBad">0</div><div class="stat-lbl">❌ Invalid</div></div>
+      <div class="stat-card stat-dup"><div class="stat-val" id="sDup">0</div><div class="stat-lbl">🔁 Dupes</div></div>
+    </div>
+
+    <div id="progressWrap" style="display:none" class="progress-wrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <span id="progressLabel">Processing…</span>
+    </div>
+
+    <div class="tab-bar" id="tabBar" style="display:none">
+      <button class="tab active" data-tab="landline">☎️ Landlines</button>
+      <button class="tab" data-tab="mobile">📱 Mobile</button>
+      <button class="tab" data-tab="other">🔵 VoIP/Other</button>
+      <button class="tab" data-tab="invalid">❌ Invalid</button>
+      <button class="tab" data-tab="duplicate">🔁 Duplicates</button>
+      <button class="tab" data-tab="all">📋 All</button>
+    </div>
+
+    <div class="table-toolbar" id="tableToolbar" style="display:none">
+      <input id="searchInput" type="text" placeholder="🔍 Search name, number, town…" class="search-input" />
+    </div>
+
+    <div class="table-wrap" id="tableWrap">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">📁</div>
+        <p>Select your folder of old packets to begin</p>
+        <p class="text-muted">It reads inside every .xlsx / .xls / .csv / .txt automatically</p>
+      </div>
+      <table id="dataTable" style="display:none">
+        <thead id="tableHead"></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="pagination" id="pagination" style="display:none">
+      <button id="pgPrev" class="btn btn-ghost btn-sm">← Prev</button>
+      <span id="pgInfo"></span>
+      <button id="pgNext" class="btn btn-ghost btn-sm">Next →</button>
+    </div>
+  </section>
+</main>
+
+<script src="app.js"></script>
 </body>
 </html>
