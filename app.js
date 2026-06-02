@@ -391,6 +391,46 @@ function detectCol(records, hint){
   return best;
 }
 
+// ── Local junk / reserved-range quality check (free, offline) ─────────────
+// Flags numbers that are valid+allocated but obviously not real subscribers.
+function numberQuality(nsn, country){
+  if(!nsn) return { q:'ok', reason:'' };
+
+  // Ofcom-reserved "drama/fiction" ranges (never real lines) for GB:
+  //  area + 496 0xxx / 7946 0xxx / 498 0xxx / 9018 0xxx / 2018 0xxx, and 1632 96xxxx
+  if(country==='GB'){
+    if(/^(11[3-8]|121|131|141|151|161)4960\d{3}$/.test(nsn)) return { q:'reserved', reason:'Ofcom drama range (496 0xxx)' };
+    if(/^2079460\d{3}$/.test(nsn)) return { q:'reserved', reason:'Ofcom drama range (020 7946)' };
+    if(/^1914980\d{3}$/.test(nsn)) return { q:'reserved', reason:'Ofcom drama range (0191 498)' };
+    if(/^2890180\d{3}$/.test(nsn)) return { q:'reserved', reason:'Ofcom drama range (028 9018)' };
+    if(/^2920180\d{3}$/.test(nsn)) return { q:'reserved', reason:'Ofcom drama range (029 2018)' };
+    if(/^163296\d{4}$/.test(nsn))  return { q:'reserved', reason:'Ofcom drama range (01632)' };
+  }
+
+  // Subscriber portion = last 6–7 digits (after area code).
+  const sub = nsn.slice(-7);
+
+  // All identical digits (e.g. 0000000, 1111111)
+  if(/^(\d)\1+$/.test(nsn) || /^(\d)\1{5,}$/.test(sub)) return { q:'suspect', reason:'All-same digits' };
+
+  // Strictly sequential ascending or descending over the whole number
+  const seq = s => { for(let i=1;i<s.length;i++){ const d=(+s[i])-(+s[i-1]); if(d!==1) return false; } return true; };
+  const dseq = s => { for(let i=1;i<s.length;i++){ const d=(+s[i])-(+s[i-1]); if(d!==-1) return false; } return true; };
+  if(nsn.length>=6 && (seq(nsn)||dseq(nsn))) return { q:'suspect', reason:'Sequential digits' };
+  if(sub.length>=6 && (seq(sub)||dseq(sub))) return { q:'suspect', reason:'Sequential digits' };
+
+  // Short repeating pattern in subscriber part (1212 12, 123123)
+  if(/^(\d{2})\1{2,}$/.test(sub) || /^(\d{3})\1+$/.test(sub)) return { q:'suspect', reason:'Repeating pattern' };
+
+  // Classic placeholder 12345678 anywhere
+  if(/12345678|23456789|123456789/.test(nsn)) return { q:'suspect', reason:'Placeholder (12345678)' };
+
+  // Excessive trailing zeros — often a switchboard/main line, not a DDI (soft)
+  if(/0{5,}$/.test(nsn)) return { q:'round', reason:'Many trailing zeros (switchboard?)' };
+
+  return { q:'ok', reason:'' };
+}
+
 // ── Validate + UK line-type classification ───────────────────────────────
 function classify(records, phoneCol, defCountry){
   records.forEach(r=>{
@@ -425,13 +465,20 @@ function classify(records, phoneCol, defCountry){
     r._reason=''; r._live='';   // live status filled by API later
     r._area = ukArea(p);        // UK town/region (free, built-in)
 
+    // Local junk/reserved-range quality check (free, offline)
+    const nsn = p.nationalNumber || '';
+    const ql = numberQuality(nsn, r._country);
+    r._quality = ql.q; r._qReason = ql.reason;
+    // Reserved drama ranges are never real lines → drop as invalid
+    if(ql.q==='reserved'){ r._status='invalid'; r._line='Reserved'; r._reason=ql.reason; }
+
     // Ofcom block-allocation + allocated-carrier lookup (free) for UK numbers
     if(r._country === 'GB'){
       const look = ofcomLookup(p);
       r._carrier = look.carrier || '';
       // Only treat landlines' unallocated blocks as dead (mobile data may be absent)
       r._alloc = (r._status === 'landline' || r._line === 'Fixed/Mobile') ? look.alloc : 'unknown';
-      if(r._alloc === 'unallocated'){ r._status='invalid'; r._line='Unallocated'; r._reason='Block not allocated by Ofcom'; }
+      if(r._alloc === 'unallocated' && r._status!=='invalid'){ r._status='invalid'; r._line='Unallocated'; r._reason='Block not allocated by Ofcom'; }
     } else { r._alloc='unknown'; r._carrier=''; }
   });
 }
@@ -486,13 +533,13 @@ function renderTable(){
   $('emptyState').style.display='none'; $('dataTable').style.display='';
 
   const dataKeys = state.records.length ? Object.keys(state.records[0]).filter(k=>!k.startsWith('_')) : [];
-  const cols = [...dataKeys, '_line', '_area', '_e164'];
+  const cols = [...dataKeys, '_line', '_area', '_quality', '_e164'];
   if(ofcom){ cols.push('_alloc', '_carrier'); }
   if(tpsSet || ctpsSet || apiHits.size) cols.push('_tps');
   cols.push('_live', '_status');
 
   $('tableHead').innerHTML = `<tr>${cols.map(c=>{
-    const label = c.startsWith('_') ? ({_line:'Line Type',_area:'Area',_e164:'E.164',_alloc:'Ofcom Block',_carrier:'Carrier',_tps:'Suppression',_live:'Live Check',_status:'Status'}[c]||c.slice(1)) : c;
+    const label = c.startsWith('_') ? ({_line:'Line Type',_area:'Area',_quality:'Quality',_e164:'E.164',_alloc:'Ofcom Block',_carrier:'Carrier',_tps:'Suppression',_live:'Live Check',_status:'Status'}[c]||c.slice(1)) : c;
     return `<th data-col="${c}">${label}</th>`;
   }).join('')}</tr>`;
 
@@ -519,6 +566,14 @@ function renderTable(){
     if(c==='_line') return `<td>${r._line||''}</td>`;
     if(c==='_area') return `<td>${r._area||''}</td>`;
     if(c==='_carrier') return `<td title="${(r._carrier||'').replace(/"/g,'&quot;')}">${r._carrier||''}</td>`;
+    if(c==='_quality'){
+      const q=r._quality;
+      if(q==='ok'||!q) return `<td><span class="badge-status b-live-active">✅ OK</span></td>`;
+      if(q==='round') return `<td><span class="badge-status b-duplicate" title="${r._qReason||''}">🔵 Round</span></td>`;
+      const cls = q==='reserved' ? 'b-invalid' : 'b-tps';
+      const lbl = q==='reserved' ? '🎭 Reserved' : '⚠️ Pattern';
+      return `<td><span class="badge-status ${cls}" title="${r._qReason||''}">${lbl}</span></td>`;
+    }
     const v=r[c]??''; return `<td title="${String(v).replace(/"/g,'&quot;')}">${String(v)}</td>`;
   }).join('')}</tr>`).join('');
 
@@ -596,6 +651,7 @@ function exportRows(pred, filename){
     const o={}; dataKeys.forEach(k=>o[k]=r[k]??'');
     o.e164=r._e164; o.line_type=r._line; o.area=r._area||''; o.status=r._status;
     o.ofcom_block=r._alloc||''; o.carrier=r._carrier||'';
+    o.quality=r._quality||''; o.quality_reason=r._qReason||'';
     o.tps_registered=r._tps?'yes':'no'; o.suppress_source=r._suppress||''; o.live_check=r._live||'';
     return o;
   });

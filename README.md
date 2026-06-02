@@ -15,6 +15,10 @@ Everything runs client-side — no server, no data leaves the browser.
 - **Duplicate removal** — by canonical E.164
 - **Ofcom block allocation check** (free, unlimited) — flags numbers whose block isn't
   allocated by Ofcom; those *cannot* be live and are dropped as invalid
+- **Local quality / junk-pattern check** (free, offline) — flags numbers that are valid &
+  allocated but obviously fake: Ofcom drama/fiction ranges (auto-dropped), all-same digits,
+  sequential runs, repeating patterns, `12345678` placeholders, and round switchboard-style
+  numbers. Shown in a **Quality** column (✅ OK / 🎭 Reserved / ⚠️ Pattern / 🔵 Round)
 - **TPS / CTPS suppression** — load a licensed TPS file; opted-out numbers are flagged
   and excluded from the TPS-safe export (UK compliance)
 - **Optional live carrier check** — paste a free Veriphone API key (1,000/month)
