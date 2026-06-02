@@ -372,7 +372,7 @@ async function runValidation(){
   updateStats();
   $('progressWrap').style.display='none';
   $('btnExportSafe').disabled=false; $('btnExportLandline').disabled=false; $('btnExportAll').disabled=false;
-  $('btnLiveCheck').disabled = false;
+  $('btnLiveCheck').disabled = !$('liveApiUrl').value.trim();
   $('btnTpsApi').disabled = !$('tpsApiUrl').value.trim();
   $('btnProcess').disabled = false;
   state.tab='landline'; setActiveTab('landline');
@@ -633,36 +633,48 @@ $('pgPrev').addEventListener('click',()=>{state.page--;renderTable();});
 $('pgNext').addEventListener('click',()=>{state.page++;renderTable();});
 
 // ── Live check (Veriphone free API) ──────────────────────────────────────
+// Live-status API presets: endpoint template + the JSON field that means "active".
+const LIVE_PRESETS = {
+  veriphone: { url:'https://api.veriphone.io/v2/verify?phone={number}&key={key}', field:'phone_valid' },
+  abstract:  { url:'https://phonevalidation.abstractapi.com/v1/?api_key={key}&phone={number}', field:'valid' },
+  numlookup: { url:'https://api.numlookupapi.com/v1/validate/{number}?apikey={key}', field:'valid' },
+  ipqs:      { url:'https://ipqualityscore.com/api/json/phone/{key}/{number}', field:'active' },
+};
+$('livePreset').addEventListener('change', e=>{
+  const p=LIVE_PRESETS[e.target.value];
+  if(p){ $('liveApiUrl').value=p.url; $('liveApiField').value=p.field; }
+  $('btnLiveCheck').disabled = !$('liveApiUrl').value.trim() || !state.records.length;
+});
+$('liveApiUrl').addEventListener('input', ()=>{
+  $('btnLiveCheck').disabled = !$('liveApiUrl').value.trim() || !state.records.length;
+});
 $('btnLiveCheck').addEventListener('click', liveCheck);
 
+// Read a possibly-nested field (dot path) from a response object.
+const dig = (o,path) => path.split('.').reduce((x,k)=> x==null?x:x[k], o);
+
 async function liveCheck(){
-  const key = $('apiKey').value.trim();
-  if(!key){ alert('Paste a free Veriphone API key first (veriphone.io → free 1,000/month).'); return; }
-  const targets = state.records.filter(r=>r._status==='landline' && !r._live);
-  if(!targets.length){ alert('No un-checked landlines to verify.'); return; }
-  if(targets.length>1000 && !confirm(`${targets.length} landlines — free tier is ~1,000/month. Continue and check the first 1,000?`)) return;
+  const url=$('liveApiUrl').value.trim(), key=$('apiKey').value.trim(), field=($('liveApiField').value.trim()||'valid');
+  if(!url){ alert('Pick a preset or enter an endpoint with {number} and {key} placeholders.'); return; }
+  const targets = state.records.filter(r=>(r._status==='landline'||r._status==='mobile') && !r._live);
+  if(!targets.length){ alert('No un-checked callable numbers.'); return; }
+  if(!confirm(`Live-check ${targets.length.toLocaleString()} numbers via your API? (uses your quota)`)) return;
 
   const lp = $('liveProgress');
   $('btnLiveCheck').disabled = true;
-  const batch = targets.slice(0,1000);
-  for(let i=0;i<batch.length;i++){
-    const r=batch[i];
-    lp.textContent = `Checking ${i+1}/${batch.length}…`;
+  let done=0;
+  for(const r of targets){
+    const u=url.replace('{number}',encodeURIComponent(r._e164)).replace('{key}',encodeURIComponent(key));
     try{
-      const url=`https://api.veriphone.io/v2/verify?phone=${encodeURIComponent(r._e164)}&key=${encodeURIComponent(key)}`;
-      const res=await fetch(url);
-      const d=await res.json();
-      // Veriphone returns phone_valid + carrier; we map to active/dead/unknown
-      if(d.status==='success' && d.phone_valid){
-        r._live = d.carrier ? 'active' : 'unknown';
-        if(d.carrier) r._carrier = d.carrier;
-      } else if(d.status==='success' && !d.phone_valid){
-        r._live='dead';
-      } else { r._live='unknown'; }
+      const d = await (await fetch(u)).json();
+      const v = dig(d, field);
+      const active = v===true || String(v).toLowerCase()==='true' || String(v).toLowerCase()==='active' || v===1 || String(v)==='1';
+      r._live = active ? 'active' : 'dead';
+      if(d.carrier && !r._carrier) r._carrier = typeof d.carrier==='string'?d.carrier:(d.carrier.name||'');
     }catch(_){ r._live='unknown'; }
-    if(i%10===0) renderTable();
+    if(++done%10===0){ lp.textContent=`Checking ${done}/${targets.length}…`; renderTable(); }
   }
-  lp.textContent = `Done — ${batch.length} checked.`;
+  lp.textContent = `Done — ${done.toLocaleString()} checked.`;
   $('btnLiveCheck').disabled=false;
   renderTable();
 }
