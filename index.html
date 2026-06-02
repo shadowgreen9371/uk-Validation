@@ -150,12 +150,32 @@
           <input id="tpsApiField" type="text"     placeholder="registered field" />
           <button id="btnTpsApi" class="btn btn-ghost" disabled>🔎 API check</button>
         </div>
-        <!-- legacy live-check (kept, optional) -->
-        <div class="sup-api mt-4">
-          <input id="apiKey" type="password" placeholder="Veriphone key (optional live check)" />
-          <button id="btnLiveCheck" class="btn btn-ghost" disabled>📶 Live-check</button>
-          <span id="liveProgress" class="live-progress"></span>
+      </div>
+
+      <div class="panel mt-12">
+        <h3 class="panel-title">Live-status API (optional)</h3>
+        <p class="panel-hint">Check if numbers are live via any provider. Pick a preset or
+          enter a custom endpoint with <code>{number}</code> &amp; <code>{key}</code> placeholders
+          and the JSON field that signals an active line. CORS-enabled providers only
+          (browser-direct); IPQS needs a proxy.</p>
+        <div class="sup-row">
+          <label class="opt-row"><span>Preset</span>
+            <select id="livePreset">
+              <option value="">Custom…</option>
+              <option value="veriphone">Veriphone (free 1k/mo, CORS ✓)</option>
+              <option value="abstract">AbstractAPI (free 100/mo, CORS ✓)</option>
+              <option value="numlookup">NumLookupAPI (free 100/mo, CORS ✓)</option>
+              <option value="ipqs">IPQualityScore (cheapest, needs proxy)</option>
+            </select>
+          </label>
         </div>
+        <div class="sup-api">
+          <input id="apiKey"       type="password" placeholder="Live API key" />
+          <input id="liveApiUrl"   type="text"     placeholder="https://…/verify?phone={number}&key={key}" />
+          <input id="liveApiField" type="text"     placeholder="active field (e.g. active / phone_valid / valid)" />
+          <button id="btnLiveCheck" class="btn btn-ghost" disabled>📶 Check live status</button>
+        </div>
+        <span id="liveProgress" class="live-progress"></span>
       </div>
 
       <div class="ofcom-line"><div id="ofcomStatus" class="live-progress">Ofcom data: loading…</div></div>
