@@ -5,8 +5,8 @@
 'use strict';
 
 const state = {
-  files: [], records: [], tab: 'landline', query: '',
-  sortCol: null, sortDir: 'asc', page: 1, pageSize: 100,
+  files: [], rawRecords: [], records: [], tab: 'landline', query: '',
+  sortCol: null, sortDir: 'asc', page: 1, pageSize: 100, step: 1,
 };
 
 const PHONE_VARIANTS = ['phone','mobile','cell','telephone','tel','number','phone_number',
@@ -241,7 +241,27 @@ function applyTps(){
   });
 }
 
-// ── File ingestion ──────────────────────────────────────────────────────
+// ── Step navigation ───────────────────────────────────────────────────────
+function showStep(n){
+  state.step = n;
+  document.querySelectorAll('.step-panel').forEach(p=>p.classList.toggle('active', p.id==='step'+n));
+  document.querySelectorAll('.step-chip').forEach(c=>{
+    const s=+c.dataset.step;
+    c.classList.toggle('active', s===n);
+    c.classList.toggle('done', s<n);
+  });
+}
+document.getElementById('stepper').addEventListener('click', e=>{
+  const chip=e.target.closest('.step-chip'); if(!chip) return;
+  const n=+chip.dataset.step;
+  if(n===1) showStep(1);
+  else if(n===2 && state.rawRecords.length) showStep(2);
+  else if(n===3 && state.records.length) showStep(3);
+});
+$('btnToValidate').addEventListener('click', ()=>{ if(state.rawRecords.length){ $('step2Info').textContent=`${state.rawRecords.length.toLocaleString()} rows from ${state.files.length} file(s) ready.`; showStep(2); }});
+$('btnBack').addEventListener('click', ()=>showStep(1));
+
+// ── File ingestion → exact-file preview (Step 1) ──────────────────────────
 $('folderInput').addEventListener('change', e => addFiles(e.target.files));
 $('fileInput').addEventListener('change',   e => addFiles(e.target.files));
 
@@ -274,11 +294,19 @@ dz.addEventListener('drop', e => {
 
 function isSupported(name){ return /\.(csv|xls|xlsx|txt)$/i.test(name); }
 
-function addFiles(files){
+async function addFiles(files){
   const incoming = Array.from(files).filter(f => isSupported(f.name));
+  if(!incoming.length) return;
   state.files.push(...incoming);
   renderFileList();
-  $('btnProcess').disabled = state.files.length === 0;
+  $('rawInfo').textContent = 'Reading files…';
+  // Parse for the exact-file preview (no validation yet)
+  for(const f of incoming){
+    try{ const rows = await parseFile(f); rows.forEach(r=>r._file=f.name); state.rawRecords.push(...rows); }
+    catch(err){ console.warn('parse fail', f.name, err); }
+  }
+  renderRawPreview();
+  $('btnToValidate').disabled = state.rawRecords.length === 0;
 }
 
 function renderFileList(){
@@ -288,60 +316,65 @@ function renderFileList(){
   $('fileList').innerHTML = state.files.map((f,i)=>`
     <li class="file-item"><span class="fi-name" title="${f.name}">${f.name}</span>
     <span class="fi-size">${fmtSize(f.size)}</span>
-    <span class="fi-status" id="fi-${i}"></span></li>`).join('');
+    <span class="fi-status done"></span></li>`).join('');
 }
 function fmtSize(b){ return b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(1)+' MB'; }
 
-// ── Process ──────────────────────────────────────────────────────────────
-$('btnProcess').addEventListener('click', processAll);
+// Show the raw uploaded rows EXACTLY as in the file (first 100).
+function renderRawPreview(){
+  const recs = state.rawRecords;
+  if(!recs.length){ $('rawEmpty').style.display=''; $('rawTable').style.display='none'; return; }
+  $('rawEmpty').style.display='none'; $('rawTable').style.display='';
+  const keys = Object.keys(recs[0]).filter(k=>k!=='_file');
+  const detected = detectCol(recs, ($('phoneCol')?.value||'').trim().toLowerCase());
+  $('rawInfo').textContent = `${recs.length.toLocaleString()} rows · ${keys.length} columns · phone column detected: “${detected||'?'}”`;
+  $('rawHead').innerHTML = `<tr><th>#</th>${keys.map(k=>`<th${k===detected?' style="color:var(--accent)"':''}>${k}</th>`).join('')}</tr>`;
+  $('rawBody').innerHTML = recs.slice(0,100).map((r,i)=>`<tr><td>${i+1}</td>${keys.map(k=>{
+    const v=r[k]??''; return `<td title="${String(v).replace(/"/g,'&quot;')}">${String(v)}</td>`;
+  }).join('')}</tr>`).join('');
+}
 
-async function processAll(){
-  if(!state.files.length) return;
+// ── Run validation (Step 2 → 3) ───────────────────────────────────────────
+$('btnProcess').addEventListener('click', runValidation);
+
+async function runValidation(){
+  if(!state.rawRecords.length) return;
   $('btnProcess').disabled = true;
-  state.records = [];
-  $('statsBar').style.display = '';
+  showStep(3);
   $('progressWrap').style.display = '';
+  $('emptyState').style.display='none';
+
+  // Fresh working copy from the raw rows (strip any prior _ fields)
+  state.records = state.rawRecords.map(r=>{
+    const o={}; for(const k of Object.keys(r)) if(!k.startsWith('_')||k==='_file') o[k]=r[k]; return o;
+  });
 
   const defCountry = $('defaultCountry').value;
   const colHint = $('phoneCol').value.trim().toLowerCase();
 
-  for(let i=0;i<state.files.length;i++){
-    const f = state.files[i];
-    showProgress(Math.round(i/state.files.length*55), `Reading ${f.name}…`);
-    try{
-      const rows = await parseFile(f);
-      const el = $(`fi-${i}`); if(el) el.className='fi-status done';
-      rows.forEach(r => r._file = f.name);
-      state.records.push(...rows);
-    }catch(err){
-      const el = $(`fi-${i}`); if(el) el.className='fi-status error';
-      console.warn('parse fail', f.name, err);
-    }
-  }
-
-  showProgress(65,'Detecting phone column…'); await tick();
+  showProgress(40,'Detecting phone column…'); await tick();
   const phoneCol = detectCol(state.records, colHint);
 
-  showProgress(72,'Validating & classifying UK numbers…'); await tick();
-  classify(state.records, phoneCol, defCountry);
+  showProgress(60,'Validating & classifying…'); await tick();
+  classify(state.records, phoneCol, defCountry, { ofcom:$('optOfcom').checked, quality:$('optQuality').checked });
 
   if($('ukOnly').checked)
     state.records = state.records.filter(r => r._country === 'GB' || r._status === 'invalid');
 
-  showProgress(88,'Removing duplicates…'); await tick();
+  showProgress(82,'Removing duplicates…'); await tick();
   if($('dedup').checked) dedup(state.records);
 
-  showProgress(94,'Checking TPS suppression…'); await tick();
+  showProgress(92,'Checking suppression…'); await tick();
   applyTps();
 
   showProgress(100,'Done'); await tick();
 
   updateStats();
-  $('tabBar').style.display=''; $('tableToolbar').style.display='';
   $('progressWrap').style.display='none';
   $('btnExportSafe').disabled=false; $('btnExportLandline').disabled=false; $('btnExportAll').disabled=false;
   $('btnLiveCheck').disabled = false;
   $('btnTpsApi').disabled = !$('tpsApiUrl').value.trim();
+  $('btnProcess').disabled = false;
   state.tab='landline'; setActiveTab('landline');
   renderTable();
 }
@@ -432,7 +465,7 @@ function numberQuality(nsn, country){
 }
 
 // ── Validate + UK line-type classification ───────────────────────────────
-function classify(records, phoneCol, defCountry){
+function classify(records, phoneCol, defCountry, opts={ofcom:true,quality:true}){
   records.forEach(r=>{
     const raw = phoneCol ? String(r[phoneCol]??'').trim() : '';
     r._raw = raw;
@@ -465,18 +498,18 @@ function classify(records, phoneCol, defCountry){
     r._reason=''; r._live='';   // live status filled by API later
     r._area = ukArea(p);        // UK town/region (free, built-in)
 
-    // Local junk/reserved-range quality check (free, offline)
+    // Local junk/reserved-range quality check (free, offline) — optional
     const nsn = p.nationalNumber || '';
-    const ql = numberQuality(nsn, r._country);
-    r._quality = ql.q; r._qReason = ql.reason;
-    // Reserved drama ranges are never real lines → drop as invalid
-    if(ql.q==='reserved'){ r._status='invalid'; r._line='Reserved'; r._reason=ql.reason; }
+    if(opts.quality){
+      const ql = numberQuality(nsn, r._country);
+      r._quality = ql.q; r._qReason = ql.reason;
+      if(ql.q==='reserved'){ r._status='invalid'; r._line='Reserved'; r._reason=ql.reason; }
+    } else { r._quality='ok'; r._qReason=''; }
 
-    // Ofcom block-allocation + allocated-carrier lookup (free) for UK numbers
-    if(r._country === 'GB'){
+    // Ofcom block-allocation + allocated-carrier lookup (free) — optional
+    if(opts.ofcom && r._country === 'GB'){
       const look = ofcomLookup(p);
       r._carrier = look.carrier || '';
-      // Only treat landlines' unallocated blocks as dead (mobile data may be absent)
       r._alloc = (r._status === 'landline' || r._line === 'Fixed/Mobile') ? look.alloc : 'unknown';
       if(r._alloc === 'unallocated' && r._status!=='invalid'){ r._status='invalid'; r._line='Unallocated'; r._reason='Block not allocated by Ofcom'; }
     } else { r._alloc='unknown'; r._carrier=''; }
@@ -663,10 +696,62 @@ function exportRows(pred, filename){
 
 // ── Reset ────────────────────────────────────────────────────────────────
 $('btnReset').addEventListener('click',()=>{
-  Object.assign(state,{files:[],records:[],tab:'landline',query:'',sortCol:null,page:1});
+  Object.assign(state,{files:[],rawRecords:[],records:[],tab:'landline',query:'',sortCol:null,page:1,step:1});
   $('folderInput').value=''; $('fileInput').value=''; $('fileList').innerHTML='';
-  ['fileListPanel','statsBar','tabBar','tableToolbar','pagination','progressWrap'].forEach(id=>$(id).style.display='none');
+  $('fileListPanel').style.display='none';
+  $('rawEmpty').style.display=''; $('rawTable').style.display='none';
+  $('rawInfo').textContent='Select files to see their raw contents here.';
   $('dataTable').style.display='none'; $('emptyState').style.display='';
-  $('btnProcess').disabled=true; $('btnExportSafe').disabled=true; $('btnExportLandline').disabled=true; $('btnExportAll').disabled=true; $('btnLiveCheck').disabled=true;
+  $('pagination').style.display='none';
+  $('btnToValidate').disabled=true;
+  $('btnExportSafe').disabled=true; $('btnExportLandline').disabled=true; $('btnExportAll').disabled=true; $('btnLiveCheck').disabled=true;
   $('searchInput').value=''; $('liveProgress').textContent='';
+  showStep(1);
 });
+
+// ── Local storage: IndexedDB dataset persistence ──────────────────────────
+const DB_NAME='ukval', STORE='datasets';
+function openDB(){
+  return new Promise((res,rej)=>{
+    const rq=indexedDB.open(DB_NAME,1);
+    rq.onupgradeneeded=()=>{ const db=rq.result; if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE,{keyPath:'id'}); };
+    rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error);
+  });
+}
+async function dbPut(rec){ const db=await openDB(); return new Promise((res,rej)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(rec);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);}); }
+async function dbAll(){ const db=await openDB(); return new Promise((res,rej)=>{const tx=db.transaction(STORE,'readonly');const rq=tx.objectStore(STORE).getAll();rq.onsuccess=()=>res(rq.result||[]);rq.onerror=()=>rej(rq.error);}); }
+async function dbGet(id){ const db=await openDB(); return new Promise((res,rej)=>{const tx=db.transaction(STORE,'readonly');const rq=tx.objectStore(STORE).get(id);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);}); }
+async function dbDel(id){ const db=await openDB(); return new Promise((res,rej)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).delete(id);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);}); }
+
+$('btnSave').addEventListener('click', async ()=>{
+  if(!state.records.length) return alert('Nothing to save yet.');
+  const name=($('datasetName').value.trim())||`dataset ${new Date().toLocaleString()}`;
+  const rec={ id:'ds_'+Date.now(), name, savedAt:new Date().toISOString(), count:state.records.length, records:state.records };
+  try{ await dbPut(rec); $('datasetName').value=''; await refreshSaved(); alert(`Saved “${name}” (${rec.count.toLocaleString()} rows) to local storage.`); }
+  catch(err){ alert('Save failed: '+err.message); }
+});
+
+async function refreshSaved(){
+  let list=[]; try{ list=await dbAll(); }catch(_){}
+  list.sort((a,b)=>b.savedAt.localeCompare(a.savedAt));
+  $('savedCount').textContent=list.length;
+  $('savedList').innerHTML = list.length ? list.map(d=>`
+    <li class="file-item">
+      <span class="fi-name" title="${d.name}">${d.name}</span>
+      <span class="fi-size">${d.count.toLocaleString()}</span>
+      <button class="btn btn-ghost btn-sm" data-load="${d.id}">Load</button>
+      <button class="btn btn-ghost btn-sm" data-del="${d.id}">✕</button>
+    </li>`).join('') : '<li class="text-muted" style="font-size:12px;list-style:none">None yet.</li>';
+}
+$('savedList').addEventListener('click', async e=>{
+  const load=e.target.closest('[data-load]'), del=e.target.closest('[data-del]');
+  if(load){
+    const d=await dbGet(load.dataset.load); if(!d) return;
+    state.records=d.records; state.rawRecords=d.records.slice();
+    updateStats(); $('btnExportSafe').disabled=false; $('btnExportLandline').disabled=false; $('btnExportAll').disabled=false;
+    state.tab='landline'; setActiveTab('landline'); renderTable(); showStep(3);
+  } else if(del){
+    if(confirm('Delete this saved dataset?')){ await dbDel(del.dataset.del); refreshSaved(); }
+  }
+});
+refreshSaved();

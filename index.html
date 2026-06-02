@@ -16,135 +16,165 @@
     <span class="logo">📞</span>
     <span>UK <strong>Validation</strong> Workstation</span>
   </div>
+
+  <!-- Step indicator -->
+  <div class="stepper" id="stepper">
+    <div class="step-chip active" data-step="1"><span class="step-no">1</span> Source</div>
+    <div class="step-sep"></div>
+    <div class="step-chip" data-step="2"><span class="step-no">2</span> Validate</div>
+    <div class="step-sep"></div>
+    <div class="step-chip" data-step="3"><span class="step-no">3</span> Results</div>
+  </div>
+
   <div class="topbar-actions">
-    <button id="btnExportSafe"     class="btn btn-primary" disabled>⬇ Export TPS-safe</button>
-    <button id="btnExportLandline" class="btn btn-ghost"   disabled>⬇ Export Landlines</button>
-    <button id="btnExportAll"      class="btn btn-ghost"   disabled>⬇ Export All</button>
+    <button id="btnExportSafe"     class="btn btn-primary" disabled>⬇ TPS-safe</button>
+    <button id="btnExportLandline" class="btn btn-ghost"   disabled>⬇ Landlines</button>
+    <button id="btnExportAll"      class="btn btn-ghost"   disabled>⬇ All</button>
     <button id="btnReset"          class="btn btn-ghost">✕ Reset</button>
   </div>
 </header>
 
-<main class="layout">
+<main class="wizard">
 
-  <!-- SIDEBAR -->
-  <aside class="sidebar">
+  <!-- ══ STEP 1 — SOURCE (upload + exact file preview + storage) ══ -->
+  <section class="step-panel active" id="step1">
+    <div class="step-grid">
+      <div class="step-left">
+        <div id="dropZone" class="dropzone">
+          <div class="dropzone-icon">📂</div>
+          <p class="dropzone-title">Drop a folder or files here</p>
+          <p class="dropzone-sub">Reads inside every Excel / CSV / TXT</p>
+          <label class="btn btn-primary mt-8">📁 Select Folder
+            <input type="file" id="folderInput" webkitdirectory directory multiple hidden /></label>
+          <label class="btn btn-ghost mt-4">📄 Select Files
+            <input type="file" id="fileInput" multiple accept=".csv,.xls,.xlsx,.txt" hidden /></label>
+        </div>
 
-    <div id="dropZone" class="dropzone">
-      <div class="dropzone-icon">📂</div>
-      <p class="dropzone-title">Drop your folder of packets here</p>
-      <p class="dropzone-sub">Reads inside every Excel / CSV / TXT</p>
-      <label class="btn btn-primary mt-8">
-        📁 Select Folder
-        <input type="file" id="folderInput" webkitdirectory directory multiple hidden />
-      </label>
-      <label class="btn btn-ghost mt-4">
-        📄 Select Files
-        <input type="file" id="fileInput" multiple accept=".csv,.xls,.xlsx,.txt" hidden />
-      </label>
+        <div class="panel" id="fileListPanel" style="display:none">
+          <h3 class="panel-title">Files <span id="fileCount" class="badge">0</span></h3>
+          <ul id="fileList" class="file-list"></ul>
+        </div>
+
+        <div class="panel" id="savedPanel">
+          <h3 class="panel-title">💾 Saved datasets <span id="savedCount" class="badge">0</span></h3>
+          <p class="panel-hint">Stored locally in your browser (IndexedDB). Reload without re-uploading.</p>
+          <ul id="savedList" class="file-list"></ul>
+        </div>
+      </div>
+
+      <div class="step-right">
+        <div class="preview-head">
+          <h2 class="step-h">Exact file preview</h2>
+          <span id="rawInfo" class="text-muted">Select files to see their raw contents here.</span>
+        </div>
+        <div class="table-wrap" id="rawWrap">
+          <div class="empty-state" id="rawEmpty">
+            <div class="empty-icon">📄</div>
+            <p>Your uploaded rows appear here — exactly as in the file</p>
+            <p class="text-muted">No changes are made until you run validation</p>
+          </div>
+          <table id="rawTable" style="display:none">
+            <thead id="rawHead"></thead>
+            <tbody id="rawBody"></tbody>
+          </table>
+        </div>
+        <div class="step-foot">
+          <button id="btnToValidate" class="btn btn-primary" disabled>Continue to validation →</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ STEP 2 — VALIDATION OPTIONS ══ -->
+  <section class="step-panel" id="step2">
+    <div class="step-center">
+      <h2 class="step-h">Choose validation</h2>
+      <p class="text-muted mb-12" id="step2Info">Pick the checks to run on your data.</p>
+
+      <div class="opt-cards">
+        <label class="opt-card">
+          <input type="checkbox" id="optFormat" checked disabled />
+          <div><strong>Validate &amp; classify</strong><small>Format check + line type (always on)</small></div>
+        </label>
+        <label class="opt-card">
+          <input type="checkbox" id="normaliseE164" checked />
+          <div><strong>Normalise to E.164</strong><small>Convert every number to +44…</small></div>
+        </label>
+        <label class="opt-card">
+          <input type="checkbox" id="dedup" checked />
+          <div><strong>Remove duplicates</strong><small>By canonical E.164</small></div>
+        </label>
+        <label class="opt-card">
+          <input type="checkbox" id="ukOnly" />
+          <div><strong>UK numbers only</strong><small>Drop non-GB numbers</small></div>
+        </label>
+        <label class="opt-card">
+          <input type="checkbox" id="optOfcom" checked />
+          <div><strong>Ofcom block + carrier</strong><small>Allocation status &amp; carrier (free)</small></div>
+        </label>
+        <label class="opt-card">
+          <input type="checkbox" id="optQuality" checked />
+          <div><strong>Quality / junk patterns</strong><small>Reserved, sequential, all-same…</small></div>
+        </label>
+      </div>
+
+      <div class="opt-inline">
+        <label class="opt-row">
+          <span>Default country</span>
+          <select id="defaultCountry">
+            <option value="GB" selected>🇬🇧 UK (+44)</option>
+            <option value="US">🇺🇸 USA (+1)</option>
+            <option value="IE">🇮🇪 Ireland (+353)</option>
+            <option value="AU">🇦🇺 Australia (+61)</option>
+          </select>
+        </label>
+        <label class="opt-row">
+          <span>Phone column</span>
+          <input id="phoneCol" type="text" placeholder="auto-detect" />
+        </label>
+      </div>
+
+      <div class="panel mt-12">
+        <h3 class="panel-title">Suppression (optional, compliance)</h3>
+        <p class="panel-hint">Load <strong>TPS</strong> (consumer) / <strong>CTPS</strong> (corporate)
+          lists you've licensed, or check via a paid TPS API. Lists stay in your browser.</p>
+        <div class="sup-row">
+          <label class="btn btn-ghost">📋 TPS file<input type="file" id="tpsInput" accept=".csv,.txt" hidden /></label>
+          <label class="btn btn-ghost">🏢 CTPS file<input type="file" id="ctpsInput" accept=".csv,.txt" hidden /></label>
+          <label class="opt-row checkbox-row"><input type="checkbox" id="tpsAuto" checked /><span>Auto-suppress matches</span></label>
+        </div>
+        <div id="tpsStatus" class="live-progress">No suppression list loaded</div>
+        <div class="sup-api">
+          <input id="tpsApiKey"   type="password" placeholder="API key (optional)" />
+          <input id="tpsApiUrl"   type="text"     placeholder="https://api…/check?n={number}&key={key}" />
+          <input id="tpsApiField" type="text"     placeholder="registered field" />
+          <button id="btnTpsApi" class="btn btn-ghost" disabled>🔎 API check</button>
+        </div>
+        <!-- legacy live-check (kept, optional) -->
+        <div class="sup-api mt-4">
+          <input id="apiKey" type="password" placeholder="Veriphone key (optional live check)" />
+          <button id="btnLiveCheck" class="btn btn-ghost" disabled>📶 Live-check</button>
+          <span id="liveProgress" class="live-progress"></span>
+        </div>
+      </div>
+
+      <div class="ofcom-line"><div id="ofcomStatus" class="live-progress">Ofcom data: loading…</div></div>
+
+      <div class="step-foot between">
+        <button id="btnBack" class="btn btn-ghost">← Back</button>
+        <button id="btnProcess" class="btn btn-primary">Run validation →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ STEP 3 — RESULTS ══ -->
+  <section class="step-panel" id="step3">
+    <div id="progressWrap" style="display:none" class="progress-wrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <span id="progressLabel">Processing…</span>
     </div>
 
-    <div class="panel">
-      <h3 class="panel-title">Options</h3>
-      <label class="opt-row">
-        <span>Default Country</span>
-        <select id="defaultCountry">
-          <option value="GB" selected>🇬🇧 UK (+44)</option>
-          <option value="US">🇺🇸 USA (+1)</option>
-          <option value="IE">🇮🇪 Ireland (+353)</option>
-          <option value="AU">🇦🇺 Australia (+61)</option>
-        </select>
-      </label>
-      <label class="opt-row">
-        <span>Phone column</span>
-        <input id="phoneCol" type="text" placeholder="auto-detect" />
-      </label>
-      <label class="opt-row checkbox-row">
-        <input type="checkbox" id="ukOnly" />
-        <span>UK numbers only</span>
-      </label>
-      <label class="opt-row checkbox-row">
-        <input type="checkbox" id="dedup" checked />
-        <span>Remove duplicates</span>
-      </label>
-    </div>
-
-    <div class="panel">
-      <h3 class="panel-title">Ofcom Block + Carrier</h3>
-      <p class="panel-hint">Free &amp; unlimited. Flags numbers whose block isn't
-        allocated by Ofcom (those <strong>can't</strong> be live → dropped as invalid)
-        and shows the originally-allocated carrier (BT, Sky…).</p>
-      <div id="ofcomStatus" class="live-progress">No Ofcom data loaded — see scripts/build-ofcom-lookup.mjs</div>
-    </div>
-
-    <div class="panel">
-      <h3 class="panel-title">Suppression (compliance)</h3>
-      <p class="panel-hint">Upload <strong>TPS</strong> (consumer) and/or <strong>CTPS</strong>
-        (corporate/B2B) files you've licensed. Matches are flagged opted-out and excluded
-        from the safe export. Runs in-browser — lists never leave your machine.</p>
-      <label class="btn btn-ghost full-width">
-        📋 Load TPS file (consumer)
-        <input type="file" id="tpsInput" accept=".csv,.txt" hidden />
-      </label>
-      <label class="btn btn-ghost full-width mt-4">
-        🏢 Load CTPS file (corporate)
-        <input type="file" id="ctpsInput" accept=".csv,.txt" hidden />
-      </label>
-      <label class="opt-row checkbox-row mt-4">
-        <input type="checkbox" id="tpsAuto" checked />
-        <span>Auto-suppress matches</span>
-      </label>
-      <div id="tpsStatus" class="live-progress">No suppression list loaded</div>
-
-      <p class="panel-hint mt-8" style="border-top:1px solid var(--border);padding-top:10px">
-        <strong>Or check via a paid TPS API.</strong> Enter your provider's endpoint
-        (use <code>{number}</code> and <code>{key}</code> placeholders) and the JSON field
-        that signals a registration.</p>
-      <label class="opt-row">
-        <span>API key</span>
-        <input id="tpsApiKey" type="password" placeholder="optional" />
-      </label>
-      <label class="opt-row">
-        <span>Endpoint</span>
-        <input id="tpsApiUrl" type="text" placeholder="https://api…/check?n={number}&key={key}" />
-      </label>
-      <label class="opt-row">
-        <span>“registered” field</span>
-        <input id="tpsApiField" type="text" placeholder="e.g. registered / tps" />
-      </label>
-      <button id="btnTpsApi" class="btn btn-ghost full-width mt-4" disabled>
-        🔎 Auto-check via API
-      </button>
-    </div>
-
-    <div class="panel">
-      <h3 class="panel-title">Live Check (optional)</h3>
-      <p class="panel-hint">Validation is free &amp; unlimited. For a real carrier
-        line-check, paste a free <a href="https://veriphone.io" target="_blank" rel="noopener">Veriphone</a> API key
-        (1,000 free/month).</p>
-      <label class="opt-row">
-        <span>API key</span>
-        <input id="apiKey" type="password" placeholder="optional" />
-      </label>
-      <button id="btnLiveCheck" class="btn btn-ghost full-width mt-4" disabled>
-        📶 Live-check landlines
-      </button>
-      <div id="liveProgress" class="live-progress"></div>
-    </div>
-
-    <button id="btnProcess" class="btn btn-primary full-width mt-8" disabled>
-      ▶ Process All Files
-    </button>
-
-    <div class="panel" id="fileListPanel" style="display:none">
-      <h3 class="panel-title">Files <span id="fileCount" class="badge">0</span></h3>
-      <ul id="fileList" class="file-list"></ul>
-    </div>
-  </aside>
-
-  <!-- CONTENT -->
-  <section class="content">
-
-    <div class="stats-bar" id="statsBar" style="display:none">
+    <div class="stats-bar" id="statsBar">
       <div class="stat-card stat-total"><div class="stat-val" id="sTotal">0</div><div class="stat-lbl">Total</div></div>
       <div class="stat-card stat-land"><div class="stat-val" id="sLand">0</div><div class="stat-lbl">☎️ Landline</div></div>
       <div class="stat-card stat-mob"><div class="stat-val" id="sMob">0</div><div class="stat-lbl">📱 Mobile</div></div>
@@ -154,35 +184,29 @@
       <div class="stat-card stat-tps"><div class="stat-val" id="sTps">0</div><div class="stat-lbl">🚫 TPS</div></div>
     </div>
 
-    <div id="progressWrap" style="display:none" class="progress-wrap">
-      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
-      <span id="progressLabel">Processing…</span>
+    <div class="results-toolbar">
+      <div class="tab-bar" id="tabBar">
+        <button class="tab active" data-tab="landline">☎️ Landlines</button>
+        <button class="tab" data-tab="mobile">📱 Mobile</button>
+        <button class="tab" data-tab="other">🔵 VoIP/Other</button>
+        <button class="tab" data-tab="invalid">❌ Invalid</button>
+        <button class="tab" data-tab="duplicate">🔁 Duplicates</button>
+        <button class="tab" data-tab="tps">🚫 TPS</button>
+        <button class="tab" data-tab="all">📋 All</button>
+      </div>
+      <div class="store-row">
+        <input id="datasetName" type="text" placeholder="dataset name…" class="search-input" style="max-width:180px" />
+        <button id="btnSave" class="btn btn-ghost">💾 Save to storage</button>
+      </div>
     </div>
 
-    <div class="tab-bar" id="tabBar" style="display:none">
-      <button class="tab active" data-tab="landline">☎️ Landlines</button>
-      <button class="tab" data-tab="mobile">📱 Mobile</button>
-      <button class="tab" data-tab="other">🔵 VoIP/Other</button>
-      <button class="tab" data-tab="invalid">❌ Invalid</button>
-      <button class="tab" data-tab="duplicate">🔁 Duplicates</button>
-      <button class="tab" data-tab="tps">🚫 TPS-registered</button>
-      <button class="tab" data-tab="all">📋 All</button>
-    </div>
-
-    <div class="table-toolbar" id="tableToolbar" style="display:none">
+    <div class="table-toolbar" id="tableToolbar">
       <input id="searchInput" type="text" placeholder="🔍 Search name, number, town…" class="search-input" />
     </div>
 
     <div class="table-wrap" id="tableWrap">
-      <div class="empty-state" id="emptyState">
-        <div class="empty-icon">📁</div>
-        <p>Select your folder of old packets to begin</p>
-        <p class="text-muted">It reads inside every .xlsx / .xls / .csv / .txt automatically</p>
-      </div>
-      <table id="dataTable" style="display:none">
-        <thead id="tableHead"></thead>
-        <tbody id="tableBody"></tbody>
-      </table>
+      <div class="empty-state" id="emptyState"><div class="empty-icon">📊</div><p>Run validation to see results</p></div>
+      <table id="dataTable" style="display:none"><thead id="tableHead"></thead><tbody id="tableBody"></tbody></table>
     </div>
 
     <div class="pagination" id="pagination" style="display:none">

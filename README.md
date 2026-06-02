@@ -1,10 +1,23 @@
 # 📞 UK Phone Validation Workstation
 
-A browser-based tool to clean old contact packets: **upload a folder of Excel/CSV files →
-validate → classify UK line type → remove duplicates → check Ofcom block allocation → export.**
-Everything runs client-side — no server, no data leaves the browser.
+A browser-based tool to clean old contact packets. Everything runs client-side — no server,
+no data leaves the browser.
 
 🌐 **Live:** https://shadowgreen9371.github.io/uk-Validation/
+
+## 3-step workflow
+
+1. **Source** — drop a folder/files; the **exact file contents** are shown first (raw rows,
+   detected phone column highlighted). Nothing is changed yet.
+2. **Validate** — pick which checks to run (line type, E.164, dedupe, Ofcom block + carrier,
+   quality/junk patterns, UK-only) and optionally load TPS/CTPS suppression.
+3. **Results** — stats, tabs, searchable table, and CSV exports.
+
+## Local database (storage)
+
+Processed datasets can be **saved to your browser's IndexedDB** — name a run, *Save to
+storage*, and reload it later from the **Saved datasets** list without re-uploading or
+re-processing. Handles large datasets and never leaves your machine.
 
 ## Features
 
