@@ -161,32 +161,83 @@ function ofcomLookup(parsed){
   return { alloc:'unallocated', carrier:'' };
 }
 
-// ── TPS / CTPS suppression list (user-supplied, licensed) ─────────────────
-let tps = null;   // Set of E.164 numbers registered on TPS
+// ── TPS / CTPS suppression (user-supplied licensed lists or paid API) ──────
+let tpsSet  = null;   // consumer TPS numbers (E.164)
+let ctpsSet = null;   // corporate CTPS numbers (E.164)
+const apiHits = new Set();   // numbers an API reported as registered
+
+// Parse a TPS/CTPS file into a Set of E.164 numbers.
+async function parseSuppressionFile(file){
+  const text = await file.text();
+  const set = new Set();
+  for(const tok of text.split(/[\s,;"']+/)){
+    const t = tok.trim(); if(t.length < 7 || !/\d/.test(t)) continue;
+    let p=null; try{ p=libphonenumber.parsePhoneNumber(t,'GB'); }catch(_){}
+    if(p && p.isValid()) set.add(p.format('E.164'));
+    else { const d=t.replace(/\D/g,''); if(d.length>=7) set.add('+44'+d.replace(/^0/,'')); }
+  }
+  return set;
+}
+
+function suppressionStatus(){
+  const bits=[];
+  if(tpsSet)  bits.push(`TPS ${tpsSet.size.toLocaleString()}`);
+  if(ctpsSet) bits.push(`CTPS ${ctpsSet.size.toLocaleString()}`);
+  if(apiHits.size) bits.push(`API ${apiHits.size.toLocaleString()}`);
+  $('tpsStatus').textContent = bits.length ? bits.join(' · ')+' loaded' : 'No suppression list loaded';
+}
+
 $('tpsInput').addEventListener('change', async e => {
-  const f = e.target.files[0]; if(!f) return;
-  $('tpsStatus').textContent = 'Reading TPS list…';
-  try{
-    const text = await f.text();
-    const set = new Set();
-    // Accept CSV/TXT: pull every token that looks like a phone number.
-    for(const tok of text.split(/[\s,;"']+/)){
-      const t = tok.trim(); if(t.length < 7) continue;
-      if(!/\d/.test(t)) continue;
-      let p=null; try{ p=libphonenumber.parsePhoneNumber(t,'GB'); }catch(_){}
-      if(p && p.isValid()) set.add(p.format('E.164'));
-      else { const d=t.replace(/\D/g,''); if(d.length>=7) set.add('+44'+d.replace(/^0/,'')); }
-    }
-    tps = set;
-    $('tpsStatus').textContent = `TPS list loaded · ${set.size.toLocaleString()} numbers`;
-    if(state.records.length){ applyTps(); updateStats(); renderTable(); }
-  }catch(err){ $('tpsStatus').textContent = 'Could not read TPS file'; console.warn(err); }
+  const f=e.target.files[0]; if(!f) return;
+  $('tpsStatus').textContent='Reading TPS list…';
+  try{ tpsSet=await parseSuppressionFile(f); suppressionStatus();
+       if(state.records.length){ applyTps(); updateStats(); renderTable(); } }
+  catch(err){ $('tpsStatus').textContent='Could not read TPS file'; console.warn(err); }
+});
+$('ctpsInput').addEventListener('change', async e => {
+  const f=e.target.files[0]; if(!f) return;
+  $('tpsStatus').textContent='Reading CTPS list…';
+  try{ ctpsSet=await parseSuppressionFile(f); suppressionStatus();
+       if(state.records.length){ applyTps(); updateStats(); renderTable(); } }
+  catch(err){ $('tpsStatus').textContent='Could not read CTPS file'; console.warn(err); }
 });
 
-// Flag every record that matches the TPS list.
+// Enable the API button only when an endpoint is present.
+$('tpsApiUrl').addEventListener('input', ()=>{
+  $('btnTpsApi').disabled = !$('tpsApiUrl').value.trim() || !state.records.length;
+});
+
+// Auto-check landlines+mobiles against a paid TPS API endpoint.
+$('btnTpsApi').addEventListener('click', async ()=>{
+  const url=$('tpsApiUrl').value.trim(), key=$('tpsApiKey').value.trim(), field=($('tpsApiField').value.trim()||'registered');
+  if(!url) return alert('Enter your provider endpoint, using {number} and {key} placeholders.');
+  const targets=state.records.filter(r=>(r._status==='landline'||r._status==='mobile') && !r._tps);
+  if(!targets.length) return alert('No un-suppressed callable numbers to check.');
+  if(!confirm(`Check ${targets.length.toLocaleString()} numbers against your TPS API? (uses your paid quota)`)) return;
+  $('btnTpsApi').disabled=true;
+  let done=0;
+  for(const r of targets){
+    const u=url.replace('{number}',encodeURIComponent(r._e164)).replace('{key}',encodeURIComponent(key));
+    try{
+      const res=await fetch(u); const d=await res.json();
+      const v=field.split('.').reduce((o,k)=>o==null?o:o[k], d);
+      const reg = v===true || String(v).toLowerCase()==='true' || String(v).toLowerCase()==='yes' || v===1 || String(v)==='1';
+      if(reg){ apiHits.add(r._e164); r._tps=true; r._suppress='API'; }
+    }catch(_){ /* leave as-is on error */ }
+    if(++done%10===0){ $('tpsStatus').textContent=`API checking ${done}/${targets.length}…`; renderTable(); }
+  }
+  suppressionStatus(); updateStats(); renderTable(); $('btnTpsApi').disabled=false;
+});
+
+// Flag every record that matches any suppression source.
 function applyTps(){
   state.records.forEach(r=>{
-    r._tps = !!(tps && r._e164 && tps.has(r._e164));
+    const e=r._e164;
+    const inT  = !!(tpsSet  && e && tpsSet.has(e));
+    const inC  = !!(ctpsSet && e && ctpsSet.has(e));
+    const inA  = !!(e && apiHits.has(e));
+    r._tps = inT || inC || inA;
+    r._suppress = inT ? 'TPS' : inC ? 'CTPS' : inA ? 'API' : '';
   });
 }
 
@@ -290,6 +341,7 @@ async function processAll(){
   $('progressWrap').style.display='none';
   $('btnExportSafe').disabled=false; $('btnExportLandline').disabled=false; $('btnExportAll').disabled=false;
   $('btnLiveCheck').disabled = false;
+  $('btnTpsApi').disabled = !$('tpsApiUrl').value.trim();
   state.tab='landline'; setActiveTab('landline');
   renderTable();
 }
@@ -436,11 +488,11 @@ function renderTable(){
   const dataKeys = state.records.length ? Object.keys(state.records[0]).filter(k=>!k.startsWith('_')) : [];
   const cols = [...dataKeys, '_line', '_area', '_e164'];
   if(ofcom){ cols.push('_alloc', '_carrier'); }
-  if(tps) cols.push('_tps');
+  if(tpsSet || ctpsSet || apiHits.size) cols.push('_tps');
   cols.push('_live', '_status');
 
   $('tableHead').innerHTML = `<tr>${cols.map(c=>{
-    const label = c.startsWith('_') ? ({_line:'Line Type',_area:'Area',_e164:'E.164',_alloc:'Ofcom Block',_carrier:'Carrier',_tps:'TPS',_live:'Live Check',_status:'Status'}[c]||c.slice(1)) : c;
+    const label = c.startsWith('_') ? ({_line:'Line Type',_area:'Area',_e164:'E.164',_alloc:'Ofcom Block',_carrier:'Carrier',_tps:'Suppression',_live:'Live Check',_status:'Status'}[c]||c.slice(1)) : c;
     return `<th data-col="${c}">${label}</th>`;
   }).join('')}</tr>`;
 
@@ -450,7 +502,7 @@ function renderTable(){
       return `<td><span class="badge-status ${cls}">${lbl}</span></td>`;}
     if(c==='_e164') return `<td><code>${r._e164||''}</code></td>`;
     if(c==='_tps') return r._tps
-      ? `<td><span class="badge-status b-tps">🚫 Registered</span></td>`
+      ? `<td><span class="badge-status b-tps">🚫 ${r._suppress||'Registered'}</span></td>`
       : `<td><span class="badge-status b-live-active">✅ Clear</span></td>`;
     if(c==='_live'){
       if(!r._live) return `<td><span class="badge-status b-live-unknown">—</span></td>`;
@@ -544,7 +596,7 @@ function exportRows(pred, filename){
     const o={}; dataKeys.forEach(k=>o[k]=r[k]??'');
     o.e164=r._e164; o.line_type=r._line; o.area=r._area||''; o.status=r._status;
     o.ofcom_block=r._alloc||''; o.carrier=r._carrier||'';
-    o.tps_registered=r._tps?'yes':'no'; o.live_check=r._live||'';
+    o.tps_registered=r._tps?'yes':'no'; o.suppress_source=r._suppress||''; o.live_check=r._live||'';
     return o;
   });
   const csv=Papa.unparse(out);
