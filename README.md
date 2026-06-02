@@ -22,18 +22,33 @@ Everything runs client-side — no server, no data leaves the browser.
 
 ## TPS / CTPS Suppression (compliance)
 
-Calling a UK consumer who's registered with the **Telephone Preference Service** without
-their consent breaches **PECR** and can draw ICO fines. This tool suppresses them:
+Calling a UK consumer (**TPS**) or business (**CTPS**) registered with the Preference
+Service without consent breaches **PECR** and can draw ICO fines. Suppress them three
+ways — use any or all:
 
-1. Obtain a TPS/CTPS file you are **licensed** to use (the register is paid; this app does
-   not and cannot provide it). Any CSV/TXT containing the numbers works.
-2. Click **Load TPS file** in the sidebar. Numbers are normalised to E.164 in-browser.
-3. Matches get a 🚫 **Registered** badge, show in the **TPS-registered** tab, and the
-   **🚫 TPS** stat counts them.
-4. Click **Export TPS-safe** — valid landlines + mobiles **minus** TPS-registered numbers.
-   (Toggle “Auto-suppress matches” off to export everything with a `tps_registered` column instead.)
+1. **TPS file** (consumer) — click *Load TPS file*.
+2. **CTPS file** (corporate/B2B) — click *Load CTPS file*.
+3. **Paid TPS API** — enter your provider's endpoint with `{number}` and `{key}`
+   placeholders + the JSON field that signals a hit, then *Auto-check via API*.
 
-> The TPS list never leaves your browser. Export adds a `tps_registered` (yes/no) column.
+You must be **licensed** to hold TPS/CTPS data — this app neither provides nor stores it;
+lists stay in your browser. Matches get a 🚫 badge tagged **TPS / CTPS / API**, appear in
+the **TPS-registered** tab, and feed the **🚫** stat.
+
+**Export TPS-safe** = valid landlines + mobiles **minus** all suppressed numbers.
+(Turn off *Auto-suppress matches* to export everything with `tps_registered` +
+`suppress_source` columns instead.)
+
+### Paid TPS API — endpoint examples
+```
+https://your-provider.com/tps?number={number}&apikey={key}     field: registered
+https://api.example.co.uk/v1/check/{number}?key={key}          field: result.tps
+```
+The app substitutes the placeholders per number, reads the field you name (dot-paths
+like `result.tps` work), and treats `true` / `yes` / `1` as registered.
+
+> Lists and API responses stay in your browser. Export adds `tps_registered` (yes/no)
+> and `suppress_source` (TPS/CTPS/API) columns.
 
 ## Ofcom Block + Carrier Check (free)
 

@@ -77,19 +77,43 @@
     </div>
 
     <div class="panel">
-      <h3 class="panel-title">TPS Suppression (compliance)</h3>
-      <p class="panel-hint">Upload a <strong>TPS / CTPS</strong> file you've licensed
-        (CSV or TXT of numbers). Any match is flagged as opted-out and excluded from
-        the TPS-safe export — so you don't call them. Runs in-browser.</p>
+      <h3 class="panel-title">Suppression (compliance)</h3>
+      <p class="panel-hint">Upload <strong>TPS</strong> (consumer) and/or <strong>CTPS</strong>
+        (corporate/B2B) files you've licensed. Matches are flagged opted-out and excluded
+        from the safe export. Runs in-browser — lists never leave your machine.</p>
       <label class="btn btn-ghost full-width">
-        📋 Load TPS file
+        📋 Load TPS file (consumer)
         <input type="file" id="tpsInput" accept=".csv,.txt" hidden />
+      </label>
+      <label class="btn btn-ghost full-width mt-4">
+        🏢 Load CTPS file (corporate)
+        <input type="file" id="ctpsInput" accept=".csv,.txt" hidden />
       </label>
       <label class="opt-row checkbox-row mt-4">
         <input type="checkbox" id="tpsAuto" checked />
         <span>Auto-suppress matches</span>
       </label>
-      <div id="tpsStatus" class="live-progress">No TPS list loaded</div>
+      <div id="tpsStatus" class="live-progress">No suppression list loaded</div>
+
+      <p class="panel-hint mt-8" style="border-top:1px solid var(--border);padding-top:10px">
+        <strong>Or check via a paid TPS API.</strong> Enter your provider's endpoint
+        (use <code>{number}</code> and <code>{key}</code> placeholders) and the JSON field
+        that signals a registration.</p>
+      <label class="opt-row">
+        <span>API key</span>
+        <input id="tpsApiKey" type="password" placeholder="optional" />
+      </label>
+      <label class="opt-row">
+        <span>Endpoint</span>
+        <input id="tpsApiUrl" type="text" placeholder="https://api…/check?n={number}&key={key}" />
+      </label>
+      <label class="opt-row">
+        <span>“registered” field</span>
+        <input id="tpsApiField" type="text" placeholder="e.g. registered / tps" />
+      </label>
+      <button id="btnTpsApi" class="btn btn-ghost full-width mt-4" disabled>
+        🔎 Auto-check via API
+      </button>
     </div>
 
     <div class="panel">
