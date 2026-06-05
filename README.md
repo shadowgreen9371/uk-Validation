@@ -130,3 +130,17 @@ scripts/
 .github/workflows/
 └── deploy.yml          # GitHub Pages auto-deploy
 ```
+
+## SQL database export
+
+Push your cleaned data into a real SQL Server database:
+
+1. Create the tables once — run [`database/schema.sql`](database/schema.sql) (SSMS or
+   `sqlcmd -S <server> -i database/schema.sql`). It builds `ImportBatch`, `Contacts`
+   (every enrichment column + a `raw_data` JSON column for original fields) and a
+   `vw_Callable` view (valid + not-suppressed + good-quality + not-dead).
+2. In **Results**, name the dataset and click **🗄️ Export SQL** — downloads a `.sql` of
+   `INSERT` statements (batched 1,000 rows) ready to run against the schema.
+3. For millions of rows, export CSV instead and `BULK INSERT` (see notes in `schema.sql`).
+
+Phone numbers are uniquely indexed (`UX_Contacts_phone`) so the DB dedupes too.
